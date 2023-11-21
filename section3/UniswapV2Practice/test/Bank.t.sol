@@ -7,12 +7,12 @@ import { Attack } from "../contracts/Attack.sol";
 
 contract BankTest is Test {
     Bank public bank;
+    Attack public attack;
     address public alice = makeAddr("Alice");
     address public attacker = makeAddr("Attacker");
 
     function setUp() public {
         bank = new Bank();
-
         // mint 10 ETH to alice
         deal(alice, 10 ether);
 
@@ -26,8 +26,11 @@ contract BankTest is Test {
 
     function test_attack() public {
         // 1. Deploy attack contract
+        attack = new Attack(address(bank));
         // 2. Exploit the bank
-
+        vm.startPrank(attacker);
+        attack.attack{ value: 1 ether }();
+        vm.stopPrank();
         assertEq(address(bank).balance, 0);
     }
 }
