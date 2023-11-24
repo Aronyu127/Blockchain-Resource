@@ -4,12 +4,9 @@ pragma solidity 0.8.17;
 import { ISimpleSwap } from "./interface/ISimpleSwap.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import "forge-std/Test.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+// import "forge-std/Test.sol";
 
 contract SimpleSwap is ISimpleSwap, ERC20("SimpleSwap", "SS") {
-    using SafeMath for uint256;
-
     address tokenA;
     address tokenB;
     uint256 private reserveA;
@@ -27,11 +24,7 @@ contract SimpleSwap is ISimpleSwap, ERC20("SimpleSwap", "SS") {
     }
 
     function isContract(address _address) public view returns (bool) {
-        uint32 size;
-        assembly {
-            size := extcodesize(_address)
-        }
-        return (size > 0);
+        return (_address.code.length > 0);
     }
 
     function sortTokens(address _tokenA, address _tokenB) internal pure returns (address token0, address token1) {
@@ -47,18 +40,18 @@ contract SimpleSwap is ISimpleSwap, ERC20("SimpleSwap", "SS") {
         require(amountIn > 0, "SimpleSwap: INSUFFICIENT_INPUT_AMOUNT");
         (uint256 reserveIn, uint256 reserveOut) = tokenIn == tokenA ? (reserveA, reserveB) : (reserveB, reserveA);
         require(reserveIn > 0 && reserveOut > 0, "SimpleSwap: INSUFFICIENT_LIQUIDITY");
-        uint256 numerator = amountIn.mul(reserveOut);
-        uint256 denominator = reserveIn.add(amountIn);
+        uint256 numerator = amountIn * reserveOut;
+        uint256 denominator = reserveIn + amountIn;
         amountOut = numerator / denominator;
         require(amountOut > 0, "SimpleSwap: INSUFFICIENT_OUTPUT_AMOUNT");
         if (tokenIn == tokenA) {
-            reserveA = reserveA.add(amountIn);
-            reserveB = reserveB.sub(amountOut);
+            reserveA = reserveA + amountIn;
+            reserveB = reserveB - amountOut;
             ERC20(tokenA).transferFrom(msg.sender, address(this), amountIn);
             ERC20(tokenB).transfer(msg.sender, amountOut);
         } else {
-            reserveB = reserveB.add(amountIn);
-            reserveA = reserveA.sub(amountOut);
+            reserveB = reserveB + amountIn;
+            reserveA = reserveA - amountOut;
             ERC20(tokenB).transferFrom(msg.sender, address(this), amountIn);
             ERC20(tokenA).transfer(msg.sender, amountOut);
         }
@@ -96,7 +89,7 @@ contract SimpleSwap is ISimpleSwap, ERC20("SimpleSwap", "SS") {
     }
 
     function removeLiquidity(uint256 liquidity) external returns (uint256 amountA, uint256 amountB) {
-        this.transferFrom(msg.sender, address(this), liquidity);
+        _transfer(msg.sender, address(this), liquidity);
         (amountA, amountB) = burn(msg.sender);
         emit RemoveLiquidity(msg.sender, amountA, amountB, liquidity);
     }
@@ -117,14 +110,14 @@ contract SimpleSwap is ISimpleSwap, ERC20("SimpleSwap", "SS") {
     function mint(address to) public returns (uint liquidity) {
         uint balanceA = ERC20(tokenA).balanceOf(address(this));
         uint balanceB = ERC20(tokenB).balanceOf(address(this));
-        uint amountA = balanceA.sub(reserveA);
-        uint amountB = balanceB.sub(reserveB);
+        uint amountA = balanceA - reserveA;
+        uint amountB = balanceB - reserveB;
 
         uint256 totalSupply = totalSupply();
         if (totalSupply == 0) {
-            liquidity = Math.sqrt(amountA.mul(amountB));
+            liquidity = Math.sqrt(amountA * amountB);
         } else {
-            liquidity = Math.min(amountA.mul(totalSupply) / reserveA, amountB.mul(totalSupply) / reserveB);
+            liquidity = Math.min(amountA * totalSupply / reserveA, amountB * totalSupply / reserveB);
         }
         require(liquidity > 0, "SimpleSwap: INSUFFICIENT_LIQUIDITY_MINTED");
         _mint(to, liquidity);
@@ -139,8 +132,8 @@ contract SimpleSwap is ISimpleSwap, ERC20("SimpleSwap", "SS") {
         uint256 liquidity = balanceOf(address(this));
 
         uint256 totalSupply = totalSupply();
-        amountA = liquidity.mul(balanceA) / totalSupply; // using balances ensures pro-rata distribution
-        amountB = liquidity.mul(balanceB) / totalSupply; // using balances ensures pro-rata distribution
+        amountA = liquidity * balanceA / totalSupply; // using balances ensures pro-rata distribution
+        amountB = liquidity * balanceB / totalSupply; // using balances ensures pro-rata distribution
         require(amountA > 0 && amountB > 0, "SimpleSwap: INSUFFICIENT_LIQUIDITY_BURNED");
         _burn(address(this), liquidity);
         ERC20(tokenA).transfer(to, amountA);
@@ -161,6 +154,6 @@ contract SimpleSwap is ISimpleSwap, ERC20("SimpleSwap", "SS") {
     function quote(uint amountA, uint _reserveA, uint _reserveB) internal pure returns (uint amountB) {
         require(amountA > 0, "INSUFFICIENT_AMOUNT");
         require(_reserveA > 0 && _reserveB > 0, "INSUFFICIENT_LIQUIDITY");
-        amountB = amountA.mul(_reserveB) / _reserveA;
+        amountB = amountA * _reserveB / _reserveA;
     }
 }
