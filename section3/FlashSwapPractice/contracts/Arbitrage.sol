@@ -5,10 +5,18 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IUniswapV2Pair } from "v2-core/interfaces/IUniswapV2Pair.sol";
 import { IUniswapV2Callee } from "v2-core/interfaces/IUniswapV2Callee.sol";
+import "forge-std/Test.sol";
 
 // This is a practice contract for flash swap arbitrage
 contract Arbitrage is IUniswapV2Callee, Ownable {
-
+    struct CallbackData {
+        address priceLowerPoolAddress;
+        address priceHigherPoolAddress;
+        uint256 repayUsdcAmount;
+        address repayToken;
+        uint256 borrowAmount;
+        address borrowToken;
+    }
     //
     // EXTERNAL NON-VIEW ONLY OWNER
     //
@@ -28,6 +36,20 @@ contract Arbitrage is IUniswapV2Callee, Ownable {
 
     function uniswapV2Call(address sender, uint256 amount0, uint256 amount1, bytes calldata data) external override {
         // TODO
+        require(sender == address(this), "Sender must be this contract");
+        require(amount0 > 0 || amount1 > 0, "Amount must be greater than 0");
+        CallbackData memory callBackData = abi.decode(data, (CallbackData));
+
+        (uint112 reserve0, uint112 reserve1, ) = IUniswapV2Pair(callBackData.priceHigherPoolAddress).getReserves();
+        uint256 usdcAmountOut = _getAmountOut(callBackData.borrowAmount, reserve0, reserve1);
+        IERC20(callBackData.borrowToken).transfer(callBackData.priceHigherPoolAddress, callBackData.borrowAmount);
+        IUniswapV2Pair(callBackData.priceHigherPoolAddress).swap(
+            0,
+            usdcAmountOut,
+            address(this),
+            ""
+        );
+        IERC20(callBackData.repayToken).transfer(callBackData.priceLowerPoolAddress, callBackData.repayUsdcAmount);        
     }
 
     // Method 1 is
@@ -41,6 +63,13 @@ contract Arbitrage is IUniswapV2Callee, Ownable {
     // for testing convenient, we implement the method 1 here
     function arbitrage(address priceLowerPool, address priceHigherPool, uint256 borrowETH) external {
         // TODO
+        (uint112 reserve0, uint112 reserve1, ) = IUniswapV2Pair(priceLowerPool).getReserves();
+        uint256 repayUsdcAmount = _getAmountIn(borrowETH, reserve1, reserve0);
+        address repayToken = IUniswapV2Pair(priceLowerPool).token1();
+        address borrowToken = IUniswapV2Pair(priceLowerPool).token0();
+        CallbackData memory callBackData = CallbackData(priceLowerPool, priceHigherPool, repayUsdcAmount, repayToken, borrowETH, borrowToken);
+        
+        IUniswapV2Pair(priceLowerPool).swap(borrowETH, 0, address(this), abi.encode(callBackData));
     }
 
     //
